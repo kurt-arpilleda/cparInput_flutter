@@ -16,7 +16,7 @@ class AutoUpdate {
   ];
 
   static const String versionPath = "V4/Others/Kurt/LatestVersionAPK/CparInput/version.json";
-  static const String apkPath = "V4/Others/Kurt/LatestVersionAPK/CparInput/cparInput.apk";
+  static const String apkPath = "V4/Others/Kurt/LatestVersionAPK/CparInput/NGReport.apk";
   static const Duration requestTimeout = Duration(seconds: 3);
   static const int maxRetries = 6;
   static const Duration initialRetryDelay = Duration(seconds: 1);
@@ -166,7 +166,7 @@ class AutoUpdate {
       try {
         final Directory? externalDir = await getExternalStorageDirectory();
         if (externalDir != null) {
-          final String apkFilePath = "${externalDir.path}/cparInput.apk";
+          final String apkFilePath = "${externalDir.path}/NGReport.apk";
           final File apkFile = File(apkFilePath);
 
           final request = http.Request('GET', Uri.parse("$apiUrl$apkPath"));
