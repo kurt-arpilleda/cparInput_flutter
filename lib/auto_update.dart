@@ -37,10 +37,9 @@ class AutoUpdate {
             int currentVersionCode = int.parse(packageInfo.buildNumber);
 
             if (latestVersionCode > currentVersionCode) {
-              _showUpdateDialog(context, latestVersionName, releaseNotes, apiUrl);
+              _showMandatoryUpdateDialog(context, latestVersionName, releaseNotes, apiUrl);
               return; // Exit the function if a successful response is received
             } else {
-              // Fluttertoast.showToast(msg: "You are using the latest version.");
               return; // Exit if no update is needed
             }
           }
@@ -57,81 +56,69 @@ class AutoUpdate {
     Fluttertoast.showToast(msg: "Failed to check for updates after $maxRetries attempts.");
   }
 
-  static void _showUpdateDialog(BuildContext context, String versionName, String releaseNotes, String apiUrl) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Update Available"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("New Version: $versionName"),
-              SizedBox(height: 10),
-              Text("Release Notes:"),
-              Text(releaseNotes),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text("Later"),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _showDownloadProgressDialog(context, apiUrl);
-                _downloadAndInstallApk(context, apiUrl);
-              },
-              child: Text("Update"),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  static void _showMandatoryUpdateDialog(BuildContext context, String versionName, String releaseNotes, String apiUrl) {
+    bool isDownloading = false;
 
-  static void _showDownloadProgressDialog(BuildContext context, String apiUrl) {
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: false, // Prevent closing by tapping outside
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Downloading Update"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              StreamBuilder<int>(
-                stream: _downloadProgressStream(apiUrl),
-                builder: (context, snapshot) {
-                  if (snapshot.hasData) {
-                    return Column(
-                      children: [
-                        LinearProgressIndicator(
-                          value: snapshot.data! / 100,
-                          backgroundColor: Colors.grey[300],
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                        ),
-                        SizedBox(height: 10),
-                        Text("${snapshot.data}% Downloading"),
-                      ],
-                    );
-                  } else {
-                    return Column(
-                      children: [
-                        LinearProgressIndicator(
-                          backgroundColor: Colors.grey[300],
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                        ),
-                        SizedBox(height: 10),
-                        Text("Starting download..."),
-                      ],
-                    );
-                  }
-                },
-              ),
+        return WillPopScope(
+          onWillPop: () async => false, // Prevent closing by back button
+          child: AlertDialog(
+            title: Text("Update Available"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("New Version: $versionName"),
+                SizedBox(height: 10),
+                Text("Release Notes:"),
+                Text(releaseNotes),
+                if (isDownloading) ...[
+                  SizedBox(height: 20),
+                  StreamBuilder<int>(
+                    stream: _downloadProgressStream(apiUrl),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData) {
+                        return Column(
+                          children: [
+                            LinearProgressIndicator(
+                              value: snapshot.data! / 100,
+                              backgroundColor: Colors.grey[300],
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                            ),
+                            SizedBox(height: 10),
+                            Text("${snapshot.data}% Downloaded"),
+                          ],
+                        );
+                      } else {
+                        return Column(
+                          children: [
+                            LinearProgressIndicator(
+                              backgroundColor: Colors.grey[300],
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                            ),
+                            SizedBox(height: 10),
+                            Text("Preparing download..."),
+                          ],
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              if (!isDownloading)
+                TextButton(
+                  onPressed: () {
+                    isDownloading = true;
+                    (context as Element).markNeedsBuild(); // Force rebuild to show progress
+                    _downloadAndInstallApk(context, apiUrl);
+                  },
+                  child: Text("UPDATE NOW"),
+                ),
             ],
           ),
         );
@@ -178,7 +165,8 @@ class AutoUpdate {
             await fileSink.close();
 
             if (await apkFile.exists()) {
-              _installApk(context, apkFilePath); // Install the APK after download
+              Navigator.of(context).pop(); // Close the dialog before installation
+              await _installApk(context, apkFilePath); // Install the APK after download
               return; // Exit the function if the download is successful
             } else {
               Fluttertoast.showToast(msg: "Failed to save the APK file.");
@@ -195,30 +183,50 @@ class AutoUpdate {
       }
     }
     Fluttertoast.showToast(msg: "Failed to download update after $maxRetries attempts.");
-    Navigator.of(context).pop(); // Close the download progress dialog
+    // Don't close the dialog - user must keep trying to update
   }
 
-  static void _installApk(BuildContext context, String apkPath) async {
+  static Future<void> _installApk(BuildContext context, String apkPath) async {
     try {
       if (await Permission.requestInstallPackages.isGranted) {
         final result = await OpenFile.open(apkPath);
         if (result.type != ResultType.done) {
-          Fluttertoast.showToast(msg: "Failed to open the installer.");
+          Fluttertoast.showToast(msg: "Failed to open the installer. Please try again.");
+          // Re-show the update dialog since installation failed
+          await Future.delayed(Duration(seconds: 2));
+          PackageInfo packageInfo = await PackageInfo.fromPlatform();
+          int currentVersionCode = int.parse(packageInfo.buildNumber);
+          checkForUpdate(context);
         }
       } else {
-        await Permission.requestInstallPackages.request();
-        if (await Permission.requestInstallPackages.isGranted) {
+        final status = await Permission.requestInstallPackages.request();
+        if (status.isGranted) {
           final result = await OpenFile.open(apkPath);
           if (result.type != ResultType.done) {
-            Fluttertoast.showToast(msg: "Failed to open the installer.");
+            Fluttertoast.showToast(msg: "Failed to open the installer. Please try again.");
+            // Re-show the update dialog since installation failed
+            await Future.delayed(Duration(seconds: 2));
+            PackageInfo packageInfo = await PackageInfo.fromPlatform();
+            int currentVersionCode = int.parse(packageInfo.buildNumber);
+            checkForUpdate(context);
           }
         } else {
-          Fluttertoast.showToast(msg: "Installation permission denied.");
+          Fluttertoast.showToast(msg: "Installation permission denied. The app cannot update without this permission.");
+          // Re-show the update dialog since permission was denied
+          await Future.delayed(Duration(seconds: 2));
+          PackageInfo packageInfo = await PackageInfo.fromPlatform();
+          int currentVersionCode = int.parse(packageInfo.buildNumber);
+          checkForUpdate(context);
         }
       }
     } catch (e) {
       print("Error installing APK: $e");
-      Fluttertoast.showToast(msg: "Failed to install update.");
+      Fluttertoast.showToast(msg: "Failed to install update. Please try again.");
+      // Re-show the update dialog since installation failed
+      await Future.delayed(Duration(seconds: 2));
+      PackageInfo packageInfo = await PackageInfo.fromPlatform();
+      int currentVersionCode = int.parse(packageInfo.buildNumber);
+      checkForUpdate(context);
     }
   }
 }
