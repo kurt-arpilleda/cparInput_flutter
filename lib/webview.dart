@@ -22,7 +22,7 @@ class SoftwareWebViewScreen extends StatefulWidget {
   _SoftwareWebViewScreenState createState() => _SoftwareWebViewScreenState();
 }
 
-class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
+class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService apiService = ApiService();
   final ApiServiceJP apiServiceJP = ApiServiceJP();
@@ -48,7 +48,30 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
+    _initializePullToRefresh();
+    _fetchInitialData();
+    _checkForUpdates();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    webViewController?.stopLoading();
+    pullToRefreshController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshAllData();
+      _checkForUpdates();
+    }
+  }
+
+  void _initializePullToRefresh() {
     pullToRefreshController = PullToRefreshController(
       settings: PullToRefreshSettings(
         color: Colors.blue,
@@ -59,12 +82,45 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
         }
       },
     );
-    _fetchAndLoadUrl();
-    _fetchDeviceInfo();
-    _loadCurrentLanguageFlag();
-    _loadPhOrJp();
+  }
 
-    AutoUpdate.checkForUpdate(context);
+  Future<void> _checkForUpdates() async {
+    try {
+      await AutoUpdate.checkForUpdate(context);
+    } catch (e) {
+      // Handle error if update check fails
+      debugPrint('Update check failed: $e');
+    }
+  }
+
+  Future<void> _fetchInitialData() async {
+    await _fetchAndLoadUrl();
+    await _fetchDeviceInfo();
+    await _loadCurrentLanguageFlag();
+    await _loadPhOrJp();
+  }
+
+  Future<void> _refreshAllData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _loadPhOrJp();
+      await _loadCurrentLanguageFlag();
+      await _fetchDeviceInfo();
+      if (webViewController != null) {
+        await webViewController!.reload();
+      } else {
+        await _fetchAndLoadUrl();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _fetchDeviceInfo() async {
@@ -73,7 +129,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
       if (deviceId == null) {
         throw Exception("Unable to get device ID");
       }
-
       final deviceResponse = await apiService.checkDeviceId(deviceId);
       if (deviceResponse['success'] == true && deviceResponse['idNumber'] != null) {
         setState(() {
@@ -360,17 +415,16 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
               backgroundColor: Color(0xFF3452B4),
               centerTitle: true,
               toolbarHeight: kToolbarHeight - 20,
-              leading: Padding(
-                padding: const EdgeInsets.only(left: 10.0),
-                child: IconButton(
-                  icon: Icon(
-                    Icons.settings,
-                    color: Colors.white,
-                  ),
-                  onPressed: () {
-                    _scaffoldKey.currentState?.openDrawer();
-                  },
+              leading: IconButton(
+                padding: EdgeInsets.zero,
+                iconSize: 30,
+                icon: Icon(
+                  Icons.settings,
+                  color: Colors.white,
                 ),
+                onPressed: () {
+                  _scaffoldKey.currentState?.openDrawer();
+                },
               ),
               title: _idNumber != null
                   ? Text(
@@ -378,8 +432,8 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 14,
-                  fontWeight: FontWeight.w500,  // Medium weight
-                  letterSpacing: 0.5,          // Slightly spaced out letters
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.5,
                   shadows: [
                     Shadow(
                       color: Colors.black.withOpacity(0.2),
@@ -388,33 +442,32 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
                     ),
                   ],
                 ),
-              ) : null,
+              )
+                  : null,
               actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 10.0),
-                  child: IconButton(
-                    icon: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.red,
-                      ),
-                      alignment: Alignment.center,
-                      width: 36,
-                      height: 36,
-                      child: Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 20,
-                      ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 25,
+                  icon: Container(
+                    width: 25,
+                    height: 25,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.red,
                     ),
-                    onPressed: () {
-                      if (Platform.isIOS) {
-                        exit(0);
-                      } else {
-                        SystemNavigator.pop();
-                      }
-                    },
+                    child: Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 25,
+                    ),
                   ),
+                  onPressed: () {
+                    if (Platform.isIOS) {
+                      exit(0);
+                    } else {
+                      SystemNavigator.pop();
+                    }
+                  },
                 ),
               ],
             ),
@@ -577,100 +630,100 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                    SizedBox(width: 25),
-                    GestureDetector(
-                      onTapDown: (_) => setState(() => _isPhCountryPressed = true),
-                      onTapUp: (_) => setState(() => _isPhCountryPressed = false),
-                      onTapCancel: () => setState(() => _isPhCountryPressed = false),
-                      onTap: () => _updatePhOrJp("ph"),
-                      child: AnimatedContainer(
-                        duration: Duration(milliseconds: 100),
-                        transform: Matrix4.identity()..scale(_isPhCountryPressed ? 0.95 : 1.0),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Image.asset(
-                              'assets/images/philippines.png',
-                              width: 40,
-                              height: 40,
-                            ),
-                            // Subtle reload icon (only visible when PH is active and not loading)
-                            if (_phOrJp == "ph" && !_isCountryLoadingPh)
-                              Opacity(
-                                opacity: 0.6, // Make it subtle
-                                child: Icon(Icons.refresh, size: 20, color: Colors.white),
-                              ),
-                            // Loading indicator
-                            if (_isCountryLoadingPh)
-                              SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            // Underline
-                            if (_phOrJp == "ph")
-                              Positioned(
-                                bottom: 0,
-                                child: Container(
-                                  height: 2,
+                        SizedBox(width: 25),
+                        GestureDetector(
+                          onTapDown: (_) => setState(() => _isPhCountryPressed = true),
+                          onTapUp: (_) => setState(() => _isPhCountryPressed = false),
+                          onTapCancel: () => setState(() => _isPhCountryPressed = false),
+                          onTap: () => _updatePhOrJp("ph"),
+                          child: AnimatedContainer(
+                            duration: Duration(milliseconds: 100),
+                            transform: Matrix4.identity()..scale(_isPhCountryPressed ? 0.95 : 1.0),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/images/philippines.png',
                                   width: 40,
-                                  color: Colors.blue,
+                                  height: 40,
                                 ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 30),
-                    GestureDetector(
-                      onTapDown: (_) => setState(() => _isJpCountryPressed = true),
-                      onTapUp: (_) => setState(() => _isJpCountryPressed = false),
-                      onTapCancel: () => setState(() => _isJpCountryPressed = false),
-                      onTap: () => _updatePhOrJp("jp"),
-                      child: AnimatedContainer(
-                        duration: Duration(milliseconds: 100),
-                        transform: Matrix4.identity()..scale(_isJpCountryPressed ? 0.95 : 1.0),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Image.asset(
-                              'assets/images/japan.png',
-                              width: 40,
-                              height: 40,
+                                // Subtle reload icon (only visible when PH is active and not loading)
+                                if (_phOrJp == "ph" && !_isCountryLoadingPh)
+                                  Opacity(
+                                    opacity: 0.6, // Make it subtle
+                                    child: Icon(Icons.refresh, size: 20, color: Colors.white),
+                                  ),
+                                // Loading indicator
+                                if (_isCountryLoadingPh)
+                                  SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                // Underline
+                                if (_phOrJp == "ph")
+                                  Positioned(
+                                    bottom: 0,
+                                    child: Container(
+                                      height: 2,
+                                      width: 40,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                              ],
                             ),
-                            // Subtle reload icon (only visible when JP is active and not loading)
-                            if (_phOrJp == "jp" && !_isCountryLoadingJp)
-                              Opacity(
-                                opacity: 0.6, // Make it subtle
-                                child: Icon(Icons.refresh, size: 20, color: Colors.white),
-                              ),
-                            // Loading indicator
-                            if (_isCountryLoadingJp)
-                              SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            // Underline
-                            if (_phOrJp == "jp")
-                              Positioned(
-                                bottom: 0,
-                                child: Container(
-                                  height: 2,
-                                  width: 40,
-                                  color: Colors.blue,
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
-                      ),
-                      ),
+                        SizedBox(width: 30),
+                        GestureDetector(
+                          onTapDown: (_) => setState(() => _isJpCountryPressed = true),
+                          onTapUp: (_) => setState(() => _isJpCountryPressed = false),
+                          onTapCancel: () => setState(() => _isJpCountryPressed = false),
+                          onTap: () => _updatePhOrJp("jp"),
+                          child: AnimatedContainer(
+                            duration: Duration(milliseconds: 100),
+                            transform: Matrix4.identity()..scale(_isJpCountryPressed ? 0.95 : 1.0),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/images/japan.png',
+                                  width: 40,
+                                  height: 40,
+                                ),
+                                // Subtle reload icon (only visible when JP is active and not loading)
+                                if (_phOrJp == "jp" && !_isCountryLoadingJp)
+                                  Opacity(
+                                    opacity: 0.6, // Make it subtle
+                                    child: Icon(Icons.refresh, size: 20, color: Colors.white),
+                                  ),
+                                // Loading indicator
+                                if (_isCountryLoadingJp)
+                                  SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                // Underline
+                                if (_phOrJp == "jp")
+                                  Positioned(
+                                    bottom: 0,
+                                    child: Container(
+                                      height: 2,
+                                      width: 40,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

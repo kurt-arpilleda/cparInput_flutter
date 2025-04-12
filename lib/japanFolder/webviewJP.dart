@@ -22,7 +22,7 @@ class SoftwareWebViewScreenJP extends StatefulWidget {
   _SoftwareWebViewScreenState createState() => _SoftwareWebViewScreenState();
 }
 
-class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> {
+class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService apiService = ApiService();
   final ApiServiceJP apiServiceJP = ApiServiceJP();
@@ -48,7 +48,30 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
+    _initializePullToRefresh();
+    _fetchInitialData();
+    _checkForUpdates();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    webViewController?.stopLoading();
+    pullToRefreshController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshAllData();
+      _checkForUpdates();
+    }
+  }
+
+  void _initializePullToRefresh() {
     pullToRefreshController = PullToRefreshController(
       settings: PullToRefreshSettings(
         color: Colors.blue,
@@ -59,13 +82,47 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> {
         }
       },
     );
-    _fetchAndLoadUrl();
-    _fetchDeviceInfo();
-    _loadCurrentLanguageFlag();
-    _loadPhOrJp();
-
-    AutoUpdate.checkForUpdate(context);
   }
+
+  Future<void> _checkForUpdates() async {
+    try {
+      await AutoUpdate.checkForUpdate(context);
+    } catch (e) {
+      // Handle error if update check fails
+      debugPrint('Update check failed: $e');
+    }
+  }
+
+  Future<void> _fetchInitialData() async {
+    await _fetchAndLoadUrl();
+    await _fetchDeviceInfo();
+    await _loadCurrentLanguageFlag();
+    await _loadPhOrJp();
+  }
+
+  Future<void> _refreshAllData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _loadPhOrJp();
+      await _loadCurrentLanguageFlag();
+      await _fetchDeviceInfo();
+      if (webViewController != null) {
+        await webViewController!.reload();
+      } else {
+        await _fetchAndLoadUrl();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
 
   Future<void> _fetchDeviceInfo() async {
     try {
@@ -360,17 +417,16 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> {
               backgroundColor: Color(0xFF3452B4),
               centerTitle: true,
               toolbarHeight: kToolbarHeight - 20,
-              leading: Padding(
-                padding: const EdgeInsets.only(left: 10.0),
-                child: IconButton(
-                  icon: Icon(
-                    Icons.settings,
-                    color: Colors.white,
-                  ),
-                  onPressed: () {
-                    _scaffoldKey.currentState?.openDrawer();
-                  },
+              leading: IconButton(
+                padding: EdgeInsets.zero,
+                iconSize: 30,
+                icon: Icon(
+                  Icons.settings,
+                  color: Colors.white,
                 ),
+                onPressed: () {
+                  _scaffoldKey.currentState?.openDrawer();
+                },
               ),
               title: _idNumber != null
                   ? Text(
@@ -378,8 +434,8 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> {
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 14,
-                  fontWeight: FontWeight.w500,  // Medium weight
-                  letterSpacing: 0.5,          // Slightly spaced out letters
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.5,
                   shadows: [
                     Shadow(
                       color: Colors.black.withOpacity(0.2),
@@ -388,33 +444,32 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> {
                     ),
                   ],
                 ),
-              ) : null,
+              )
+                  : null,
               actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 10.0),
-                  child: IconButton(
-                    icon: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.red,
-                      ),
-                      alignment: Alignment.center,
-                      width: 36,
-                      height: 36,
-                      child: Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 20,
-                      ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 25,
+                  icon: Container(
+                    width: 25,
+                    height: 25,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.red,
                     ),
-                    onPressed: () {
-                      if (Platform.isIOS) {
-                        exit(0);
-                      } else {
-                        SystemNavigator.pop();
-                      }
-                    },
+                    child: Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 25,
+                    ),
                   ),
+                  onPressed: () {
+                    if (Platform.isIOS) {
+                      exit(0);
+                    } else {
+                      SystemNavigator.pop();
+                    }
+                  },
                 ),
               ],
             ),

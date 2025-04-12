@@ -7,16 +7,51 @@ import 'api_service.dart';
 import 'japanFolder/api_serviceJP.dart';
 
 class PhOrJpScreen extends StatefulWidget {
+  const PhOrJpScreen({Key? key}) : super(key: key);
+
   @override
   _PhOrJpScreenState createState() => _PhOrJpScreenState();
 }
 
-class _PhOrJpScreenState extends State<PhOrJpScreen> {
+class _PhOrJpScreenState extends State<PhOrJpScreen> with WidgetsBindingObserver {
   bool _isLoadingPh = false;
   bool _isLoadingJp = false;
   bool _isDialogShowing = false;
   bool _isPhPressed = false;
   bool _isJpPressed = false;
+  bool _isCheckingDevice = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkExistingPreference();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh the screen when app returns from background
+      _checkExistingPreference();
+    }
+  }
+
+  Future<void> _checkExistingPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    final phOrJp = prefs.getString('phorjp');
+
+    if (phOrJp != null && !_isCheckingDevice) {
+      _isCheckingDevice = true;
+      await _verifyDeviceAndNavigate(phOrJp);
+      _isCheckingDevice = false;
+    }
+  }
 
   Future<void> _setPreference(String value, BuildContext context) async {
     if ((value == 'ph' && _isLoadingPh) || (value == 'jp' && _isLoadingJp)) {
@@ -33,11 +68,25 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
       }
     });
 
-    await Future.delayed(Duration(milliseconds: 100)); // Short delay for button press effect
+    await Future.delayed(const Duration(milliseconds: 100));
 
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     await prefs.setString('phorjp', value);
 
+    await _verifyDeviceAndNavigate(value);
+
+    setState(() {
+      if (value == 'ph') {
+        _isLoadingPh = false;
+        _isPhPressed = false;
+      } else {
+        _isLoadingJp = false;
+        _isJpPressed = false;
+      }
+    });
+  }
+
+  Future<void> _verifyDeviceAndNavigate(String value) async {
     try {
       String? deviceId = await UniqueIdentifier.serial;
       if (deviceId == null) {
@@ -66,16 +115,6 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
       }
     } catch (e) {
       _showLoginDialog(context, value);
-    } finally {
-      setState(() {
-        if (value == 'ph') {
-          _isLoadingPh = false;
-          _isPhPressed = false;
-        } else {
-          _isLoadingJp = false;
-          _isJpPressed = false;
-        }
-      });
     }
   }
 
@@ -96,13 +135,13 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
                 width: 26,
                 height: 26,
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   country == 'ph' ? "Login Required" : "ログインが必要です",
                   overflow: TextOverflow.ellipsis,
                   softWrap: false,
-                  style: TextStyle(fontSize: 20),
+                  style: const TextStyle(fontSize: 20),
                 ),
               ),
             ],
@@ -116,7 +155,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
           ),
           actions: [
             TextButton(
-              child: Text("OK"),
+              child: const Text("OK"),
               onPressed: () {
                 Navigator.of(context).pop();
                 _isDialogShowing = false;
@@ -129,7 +168,6 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
       _isDialogShowing = false;
     });
   }
-
 
   void _navigateWithTransition(BuildContext context, Widget screen) {
     Navigator.pushReplacement(
@@ -149,7 +187,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
             child: child,
           );
         },
-        transitionDuration: Duration(milliseconds: 300),
+        transitionDuration: const Duration(milliseconds: 300),
       ),
     );
   }
@@ -163,7 +201,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
       elevation: 0,
       backgroundColor: Colors.transparent,
       child: Container(
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -171,11 +209,11 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
+            const Text(
               'PH or JP',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -186,7 +224,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
                   onTapCancel: () => setState(() => _isPhPressed = false),
                   onTap: () => _setPreference('ph', context),
                   child: AnimatedContainer(
-                    duration: Duration(milliseconds: 100),
+                    duration: const Duration(milliseconds: 100),
                     transform: Matrix4.identity()..scale(_isPhPressed ? 0.95 : 1.0),
                     child: Stack(
                       alignment: Alignment.center,
@@ -198,7 +236,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
                           fit: BoxFit.contain,
                         ),
                         if (_isLoadingPh)
-                          CircularProgressIndicator(
+                          const CircularProgressIndicator(
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
                             strokeWidth: 2,
                           ),
@@ -206,7 +244,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
                     ),
                   ),
                 ),
-                SizedBox(width: 40),
+                const SizedBox(width: 40),
                 // JP Flag with button-like animation
                 GestureDetector(
                   onTapDown: (_) => setState(() => _isJpPressed = true),
@@ -214,7 +252,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
                   onTapCancel: () => setState(() => _isJpPressed = false),
                   onTap: () => _setPreference('jp', context),
                   child: AnimatedContainer(
-                    duration: Duration(milliseconds: 100),
+                    duration: const Duration(milliseconds: 100),
                     transform: Matrix4.identity()..scale(_isJpPressed ? 0.95 : 1.0),
                     child: Stack(
                       alignment: Alignment.center,
@@ -226,7 +264,7 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> {
                           fit: BoxFit.contain,
                         ),
                         if (_isLoadingJp)
-                          CircularProgressIndicator(
+                          const CircularProgressIndicator(
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
                             strokeWidth: 2,
                           ),
