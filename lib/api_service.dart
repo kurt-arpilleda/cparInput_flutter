@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:unique_identifier/unique_identifier.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const List<String> apiUrls = [
@@ -193,7 +194,13 @@ class ApiService {
           final response = await http.get(uri).timeout(requestTimeout);
 
           if (response.statusCode == 200) {
-            return jsonDecode(response.body);
+            final data = jsonDecode(response.body);
+            // Store the idNumber if it exists
+            if (data['success'] == true && data['idNumber'] != null) {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('IDNumber', data['idNumber']);
+            }
+            return data;
           }
         } catch (e) {
           print("Error accessing $apiUrl on attempt $attempt: $e");
