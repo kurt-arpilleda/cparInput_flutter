@@ -66,7 +66,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _refreshAllData();
       _checkForUpdates();
     }
   }
@@ -98,68 +97,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
     await _fetchDeviceInfo();
     await _loadCurrentLanguageFlag();
     await _loadPhOrJp();
-  }
-
-  Future<bool> _shouldRefetchUrl() async {
-    try {
-      // Get the stored IDNumber from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      String? storedIdNumber = prefs.getString('IDNumberJP');
-
-      // Get the latest IDNumber from the server
-      String? deviceId = await UniqueIdentifier.serial;
-      if (deviceId == null) {
-        return true; // If we can't get device ID, refetch to be safe
-      }
-
-      final deviceResponse = await apiServiceJP.checkDeviceId(deviceId);
-      String? serverIdNumber = deviceResponse['success'] == true ? deviceResponse['idNumber'] : null;
-
-      // If either IDNumber is null or they don't match, we should refetch the URL
-      if (storedIdNumber == null || serverIdNumber == null || storedIdNumber != serverIdNumber) {
-        debugPrint("IDNumber changed: $storedIdNumber -> $serverIdNumber. Refetching URL.");
-        return true;
-      }
-
-      return false; // IDNumbers match, no need to refetch URL
-    } catch (e) {
-      debugPrint("Error checking IDNumber: $e");
-      return true; // On error, refetch to be safe
-    }
-  }
-
-  Future<void> _refreshAllData() async {
-    setState(() {
-      _isLoading = true;
-    });
-    try {
-      // First check if IDNumber in SharedPreferences matches the one from the server
-      bool shouldRefetchUrl = await _shouldRefetchUrl();
-
-      // Always refresh basic data
-      await _loadPhOrJp();
-      await _loadCurrentLanguageFlag();
-      await _fetchDeviceInfo();
-
-      // If IDNumbers don't match, refetch the URL
-      if (shouldRefetchUrl) {
-        await _fetchAndLoadUrl();
-      } else if (webViewController != null) {
-        // If IDNumbers match, just reload the current page
-        WebUri? currentUri = await webViewController!.getUrl();
-        if (currentUri != null) {
-          await webViewController!.loadUrl(urlRequest: URLRequest(url: currentUri));
-        } else {
-          _fetchAndLoadUrl();
-        }
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
   }
 
   Future<void> _fetchDeviceInfo() async {
