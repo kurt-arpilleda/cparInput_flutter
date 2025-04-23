@@ -15,8 +15,8 @@ class AutoUpdate {
       "http://126.209.7.246/"
   ];
 
-  static const String versionPath = "V4/Others/Kurt/LatestVersionAPK/CparInput2/version.json";
-  static const String apkPath = "V4/Others/Kurt/LatestVersionAPK/CparInput2/NGReport.apk";
+  static const String versionPath = "V4/Others/Kurt/LatestVersionAPK/CparInput/version.json";
+  static const String apkPath = "V4/Others/Kurt/LatestVersionAPK/CparInput/NGReport.apk";
   static const Duration requestTimeout = Duration(seconds: 3);
   static const int maxRetries = 6;
   static const Duration initialRetryDelay = Duration(seconds: 1);
