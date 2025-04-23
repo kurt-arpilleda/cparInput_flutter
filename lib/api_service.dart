@@ -13,7 +13,7 @@ class ApiService {
     "https://126.209.7.246/"
   ];
 
-  static const Duration requestTimeout = Duration(seconds: 2);
+  static const Duration requestTimeout = Duration(seconds: 1);
   static const int maxRetries = 6;
   static const Duration initialRetryDelay = Duration(seconds: 1);
 

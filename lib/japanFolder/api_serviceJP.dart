@@ -13,7 +13,7 @@ class ApiServiceJP {
     "https://220.157.175.232/"
   ];
 
-  static const Duration requestTimeout = Duration(seconds: 2);
+  static const Duration requestTimeout = Duration(seconds: 1);
   static const int maxRetries = 6;
   static const Duration initialRetryDelay = Duration(seconds: 1);
 
