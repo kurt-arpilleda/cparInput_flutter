@@ -8,20 +8,31 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class AutoUpdate {
-    static const List<String> apiUrls = [
-      "http://192.168.254.163/",
-      "http://126.209.7.246/"
+  static const List<String> apiUrls = [
+    "http://192.168.254.163/",
+    "http://126.209.7.246/"
   ];
 
   static const String versionPath = "V4/Others/Kurt/LatestVersionAPK/CparInput/version.json";
-  static const String apkPath = "V4/Others/Kurt/LatestVersionAPK/CparInput/NGReport.apk";
-  static const Duration requestTimeout = Duration(seconds: 3);
+  static const String apkPathPrefix = "V4/Others/Kurt/LatestVersionAPK/CparInput/";
+
+  static const Duration requestTimeout = Duration(seconds: 2);
   static const int maxRetries = 6;
   static const Duration initialRetryDelay = Duration(seconds: 1);
 
+  static bool isUpdating = false;
+
   static Future<void> checkForUpdate(BuildContext context) async {
+    // If already updating, don't start another update
+    if (isUpdating) {
+      return;
+    }
+
+    isUpdating = true;
+
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       for (String apiUrl in apiUrls) {
         try {
@@ -32,15 +43,24 @@ class AutoUpdate {
             final int latestVersionCode = versionInfo["versionCode"];
             final String latestVersionName = versionInfo["versionName"];
             final String releaseNotes = versionInfo["releaseNotes"];
+            final String apkFileName = versionInfo["apk"];
 
             PackageInfo packageInfo = await PackageInfo.fromPlatform();
             int currentVersionCode = int.parse(packageInfo.buildNumber);
 
             if (latestVersionCode > currentVersionCode) {
-              await _showAutomaticUpdateDialog(context, latestVersionName, releaseNotes, apiUrl);
-              return; // Exit the function if a successful response is received
+              await _showAutomaticUpdateDialog(
+                  context,
+                  latestVersionName,
+                  releaseNotes,
+                  apiUrl,
+                  apkFileName
+              );
+              isUpdating = false;
+              return;
             } else {
-              return; // Exit if no update is needed
+              isUpdating = false;
+              return;
             }
           }
         } catch (e) {
@@ -53,16 +73,27 @@ class AutoUpdate {
         await Future.delayed(delay);
       }
     }
+
     Fluttertoast.showToast(msg: "Failed to check for updates after $maxRetries attempts.");
+    isUpdating = false;
   }
 
-  static Future<void> _showAutomaticUpdateDialog(BuildContext context, String versionName, String releaseNotes, String apiUrl) async {
-    showDialog(
+  static Future<void> _showAutomaticUpdateDialog(
+      BuildContext context,
+      String versionName,
+      String releaseNotes,
+      String apiUrl,
+      String apkFileName
+      ) async {
+    // Enable wakelock when update dialog is shown
+    await WakelockPlus.enable();
+
+    await showDialog(
       context: context,
-      barrierDismissible: false, // Prevent closing by tapping outside
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return WillPopScope(
-          onWillPop: () async => false, // Prevent closing by back button
+          onWillPop: () async => false,
           child: AlertDialog(
             title: Text("Updating Application"),
             content: Column(
@@ -75,7 +106,7 @@ class AutoUpdate {
                 Text(releaseNotes),
                 SizedBox(height: 20),
                 StreamBuilder<int>(
-                  stream: _downloadAndInstallApk(context, apiUrl),
+                  stream: _downloadAndInstallApk(context, apiUrl, apkFileName),
                   builder: (context, snapshot) {
                     if (snapshot.hasData) {
                       if (snapshot.data! == 100) {
@@ -131,17 +162,24 @@ class AutoUpdate {
         );
       },
     );
+
+    // Disable wakelock when dialog is dismissed
+    await WakelockPlus.disable();
   }
 
-  static Stream<int> _downloadAndInstallApk(BuildContext context, String apiUrl) async* {
+  static Stream<int> _downloadAndInstallApk(
+      BuildContext context,
+      String apiUrl,
+      String apkFileName
+      ) async* {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         final Directory? externalDir = await getExternalStorageDirectory();
         if (externalDir != null) {
-          final String apkFilePath = "${externalDir.path}/NGReport.apk";
+          final String apkFilePath = "${externalDir.path}/$apkFileName";
           final File apkFile = File(apkFilePath);
 
-          final request = http.Request('GET', Uri.parse("$apiUrl$apkPath"));
+          final request = http.Request('GET', Uri.parse("$apiUrl$apkPathPrefix$apkFileName"));
           final http.StreamedResponse response = await request.send().timeout(requestTimeout);
 
           if (response.statusCode == 200) {
@@ -161,19 +199,19 @@ class AutoUpdate {
 
             if (await apkFile.exists()) {
               yield 100; // Download complete
-              await _installApk(context, apkFilePath); // Install the APK after download
-              return; // Exit the function if the download and installation is successful
+              await _installApk(context, apkFilePath);
+              return;
             } else {
-              yield -1; // Indicate error
+              yield -1;
               Fluttertoast.showToast(msg: "Failed to save the APK file.");
             }
           }
         }
       } catch (e) {
         print("Error downloading APK on attempt $attempt: $e");
-        yield -1; // Indicate error
+        yield -1;
         if (attempt < maxRetries) {
-          final delay = initialRetryDelay * (1 << (attempt - 1)); // Exponential backoff
+          final delay = initialRetryDelay * (1 << (attempt - 1));
           print("Waiting for ${delay.inSeconds} seconds before retrying...");
           await Future.delayed(delay);
         }
@@ -188,10 +226,7 @@ class AutoUpdate {
         final result = await OpenFile.open(apkPath);
         if (result.type != ResultType.done) {
           Fluttertoast.showToast(msg: "Failed to open the installer. Retrying...");
-          // Re-try the update check
           await Future.delayed(Duration(seconds: 2));
-          PackageInfo packageInfo = await PackageInfo.fromPlatform();
-          int currentVersionCode = int.parse(packageInfo.buildNumber);
           await checkForUpdate(context);
         }
       } else {
@@ -200,29 +235,22 @@ class AutoUpdate {
           final result = await OpenFile.open(apkPath);
           if (result.type != ResultType.done) {
             Fluttertoast.showToast(msg: "Failed to open the installer. Retrying...");
-            // Re-try the update check
             await Future.delayed(Duration(seconds: 2));
-            PackageInfo packageInfo = await PackageInfo.fromPlatform();
-            int currentVersionCode = int.parse(packageInfo.buildNumber);
             await checkForUpdate(context);
           }
         } else {
           Fluttertoast.showToast(msg: "Installation permission denied. Retrying...");
-          // Re-try the update check
           await Future.delayed(Duration(seconds: 2));
-          PackageInfo packageInfo = await PackageInfo.fromPlatform();
-          int currentVersionCode = int.parse(packageInfo.buildNumber);
           await checkForUpdate(context);
         }
       }
     } catch (e) {
       print("Error installing APK: $e");
       Fluttertoast.showToast(msg: "Failed to install update. Retrying...");
-      // Re-try the update check
       await Future.delayed(Duration(seconds: 2));
-      PackageInfo packageInfo = await PackageInfo.fromPlatform();
-      int currentVersionCode = int.parse(packageInfo.buildNumber);
       await checkForUpdate(context);
+    } finally {
+      isUpdating = false;
     }
   }
 }
