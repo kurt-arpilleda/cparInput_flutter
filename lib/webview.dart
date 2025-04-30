@@ -264,7 +264,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
     } catch (e) {
       print("Error updating country preference: $e");
       Fluttertoast.showToast(
-        msg: "Error checking device registration: ${e.toString()}",
+        msg: _currentLanguageFlag == 2
+            ? "デバイス登録の確認中にエラーが発生しました: ${e.toString()}"
+            : "Error checking device registration: ${e.toString()}",
         toastLength: Toast.LENGTH_LONG,
         gravity: ToastGravity.BOTTOM,
       );
@@ -297,16 +299,23 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                 height: 26,
               ),
               SizedBox(width: 8),
-              Text("Login Required",
+              Text(
+                _currentLanguageFlag == 2 ? "ログインが必要です" : "Login Required",
                 overflow: TextOverflow.ellipsis,
                 softWrap: false,
                 style: TextStyle(fontSize: 20),
               ),
             ],
           ),
-          content: Text(country == 'ph'
-              ? "Please login to ARK LOG PH App first"
-              : "Please login to ARK LOG JP App first"),
+          content: Text(
+            country == 'ph'
+                ? (_currentLanguageFlag == 2
+                ? "まずARK LOG PHアプリにログインしてください"
+                : "Please login to ARK LOG PH App first")
+                : (_currentLanguageFlag == 2
+                ? "まずARK LOG JPアプリにログインしてください"
+                : "Please login to ARK LOG JP App first"),
+          ),
           actions: [
             TextButton(
               child: Text("OK"),
@@ -360,7 +369,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
       );
     } else {
       Fluttertoast.showToast(
-        msg: "Could not launch browser",
+        msg: _currentLanguageFlag == 2
+            ? "ブラウザを起動できませんでした"
+            : "Could not launch browser",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.red,
@@ -495,6 +506,8 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                                 Text(
                                   _firstName != null && _surName != null
                                       ? "$_firstName $_surName"
+                                      : _currentLanguageFlag == 2
+                                      ? "ユーザー名"
                                       : "User Name",
                                   style: TextStyle(
                                       color: Colors.white,
@@ -525,11 +538,15 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                           ),
                           SizedBox(height: 10),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: _currentLanguageFlag == 2 ? 35.0 : 16.0,
+                            ),
                             child: Row(
                               children: [
                                 Text(
-                                  "Language",
+                                  _currentLanguageFlag == 2
+                                      ? '言語'
+                                      : 'Language',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -582,7 +599,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                             child: Row(
                               children: [
                                 Text(
-                                  "Keyboard",
+                                  _currentLanguageFlag == 2
+                                      ? 'キーボード'
+                                      : 'Keyboard',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -601,11 +620,15 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                           ),
                           SizedBox(height: 20),
                           Padding(
-                            padding: const EdgeInsets.only(left: 29.0),
+                            padding: EdgeInsets.only(
+                              left: _currentLanguageFlag == 2 ? 46.0 : 30.0,
+                            ),
                             child: Row(
                               children: [
                                 Text(
-                                  "Manual",
+                                  _currentLanguageFlag == 2
+                                      ? '手引き'
+                                      : 'Manual',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -634,7 +657,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                                       );
                                     } catch (e) {
                                       Fluttertoast.showToast(
-                                        msg: "Error loading manual: ${e.toString()}",
+                                        msg: _currentLanguageFlag == 2
+                                            ? "マニュアルの読み込み中にエラーが発生しました: ${e.toString()}"
+                                            : "Error loading manual: ${e.toString()}",
                                         toastLength: Toast.LENGTH_LONG,
                                         gravity: ToastGravity.BOTTOM,
                                       );
@@ -653,7 +678,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                     child: Row(
                       children: [
                         Text(
-                          "Country",
+                          _currentLanguageFlag == 2
+                              ? '国'
+                              : 'Country',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,

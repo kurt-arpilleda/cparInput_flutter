@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import '../pdfViewer.dart';
 import '../api_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../auto_update.dart';
-import '../pdfViewer.dart';
 import 'api_serviceJP.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -73,7 +73,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
       }
     }
   }
-
   void _initializePullToRefresh() {
     pullToRefreshController = PullToRefreshController(
       settings: PullToRefreshSettings(
@@ -102,7 +101,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
     await _fetchAndLoadUrl();
     await _loadPhOrJp();
   }
-
   Future<void> _fetchDeviceInfo() async {
     try {
       String? deviceId = await UniqueIdentifier.serial;
@@ -145,12 +143,12 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
         String fallbackUrl = "${ApiServiceJP.apiUrls[1]}V4/11-A%20Employee%20List%20V2/profilepictures/$profilePictureFileName";
         bool isFallbackUrlValid = await _isImageAvailable(fallbackUrl);
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('languageFlag', profileData["languageFlag"]);
+        await prefs.setInt('languageFlagJP', profileData["languageFlag"]);
         setState(() {
           _firstName = profileData["firstName"];
           _surName = profileData["surName"];
           _profilePictureUrl = isPrimaryUrlValid ? primaryUrl : isFallbackUrlValid ? fallbackUrl : null;
-          _currentLanguageFlag = profileData["languageFlag"] ?? _currentLanguageFlag ?? 1;
+          _currentLanguageFlag = profileData["languageFlag"] ?? _currentLanguageFlag ?? 2;
         });
       }
     } catch (e) {
@@ -187,7 +185,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
   Future<void> _loadCurrentLanguageFlag() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
-      _currentLanguageFlag = prefs.getInt('languageFlag');
+      _currentLanguageFlag = prefs.getInt('languageFlagJP');
     });
   }
 
@@ -200,7 +198,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
       });
       try {
         await apiServiceJP.updateLanguageFlag(_idNumber!, flag);
-        await prefs.setInt('languageFlag', flag);
+        await prefs.setInt('languageFlagJP', flag);
 
         if (webViewController != null) {
           WebUri? currentUri = await webViewController!.getUrl();
@@ -266,7 +264,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
     } catch (e) {
       print("Error updating country preference: $e");
       Fluttertoast.showToast(
-        msg: "Error checking device registration: ${e.toString()}",
+        msg: _currentLanguageFlag == 2
+            ? "デバイス登録の確認中にエラーが発生しました: ${e.toString()}"
+            : "Error checking device registration: ${e.toString()}",
         toastLength: Toast.LENGTH_LONG,
         gravity: ToastGravity.BOTTOM,
       );
@@ -299,16 +299,23 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                 height: 26,
               ),
               SizedBox(width: 8),
-              Text("Login Required",
+              Text(
+                _currentLanguageFlag == 2 ? "ログインが必要です" : "Login Required",
                 overflow: TextOverflow.ellipsis,
                 softWrap: false,
                 style: TextStyle(fontSize: 20),
               ),
             ],
           ),
-          content: Text(country == 'ph'
-              ? "Please login to ARK LOG PH App first"
-              : "Please login to ARK LOG JP App first"),
+          content: Text(
+            country == 'ph'
+                ? (_currentLanguageFlag == 2
+                ? "まずARK LOG PHアプリにログインしてください"
+                : "Please login to ARK LOG PH App first")
+                : (_currentLanguageFlag == 2
+                ? "まずARK LOG JPアプリにログインしてください"
+                : "Please login to ARK LOG JP App first"),
+          ),
           actions: [
             TextButton(
               child: Text("OK"),
@@ -362,7 +369,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
       );
     } else {
       Fluttertoast.showToast(
-        msg: "Could not launch browser",
+        msg: _currentLanguageFlag == 2
+            ? "ブラウザを起動できませんでした"
+            : "Could not launch browser",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.red,
@@ -378,7 +387,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
       } else {
         // iOS doesn't have this capability
         Fluttertoast.showToast(
-          msg: "キーボードの選択はAndroidでのみ利用可能です。",
+          msg: "Keyboard selection is only available on Android",
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
         );
@@ -497,7 +506,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                                 Text(
                                   _firstName != null && _surName != null
                                       ? "$_firstName $_surName"
-                                      : "ユーザー名",
+                                      : _currentLanguageFlag == 2
+                                      ? "ユーザー名"
+                                      : "User Name",
                                   style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 18,
@@ -527,11 +538,15 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                           ),
                           SizedBox(height: 10),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: _currentLanguageFlag == 2 ? 35.0 : 16.0,
+                            ),
                             child: Row(
                               children: [
                                 Text(
-                                  "言語",
+                                  _currentLanguageFlag == 2
+                                      ? '言語'
+                                      : 'Language',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -584,7 +599,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                             child: Row(
                               children: [
                                 Text(
-                                  "キーボード",
+                                  _currentLanguageFlag == 2
+                                      ? 'キーボード'
+                                      : 'Keyboard',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -603,11 +620,15 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                           ),
                           SizedBox(height: 20),
                           Padding(
-                            padding: const EdgeInsets.only(left: 46.0),
+                            padding: EdgeInsets.only(
+                              left: _currentLanguageFlag == 2 ? 46.0 : 30.0,
+                            ),
                             child: Row(
                               children: [
                                 Text(
-                                  "手引き",
+                                  _currentLanguageFlag == 2
+                                      ? '手引き'
+                                      : 'Manual',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -636,7 +657,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                                       );
                                     } catch (e) {
                                       Fluttertoast.showToast(
-                                        msg: "Error loading manual: ${e.toString()}",
+                                        msg: _currentLanguageFlag == 2
+                                            ? "マニュアルの読み込み中にエラーが発生しました: ${e.toString()}"
+                                            : "Error loading manual: ${e.toString()}",
                                         toastLength: Toast.LENGTH_LONG,
                                         gravity: ToastGravity.BOTTOM,
                                       );
@@ -655,7 +678,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                     child: Row(
                       children: [
                         Text(
-                          "国",
+                          _currentLanguageFlag == 2
+                              ? '国'
+                              : 'Country',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
