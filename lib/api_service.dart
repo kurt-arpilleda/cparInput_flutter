@@ -13,11 +13,14 @@ class ApiService {
     "https://126.209.7.246/"
   ];
 
-  static const Duration requestTimeout = Duration(seconds: 1);
+  static const Duration requestTimeout = Duration(seconds: 2);
   static const int maxRetries = 6;
   static const Duration initialRetryDelay = Duration(seconds: 1);
 
+  // Cache for the last working server index
+  int? _lastWorkingServerIndex;
   late http.Client httpClient;
+  final Future<SharedPreferences> _prefs = SharedPreferences.getInstance();
 
   ApiService() {
     httpClient = _createHttpClient();
@@ -28,6 +31,7 @@ class ApiService {
       ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
     return IOClient(client);
   }
+
   void _showToast(String message) {
     Fluttertoast.showToast(
       msg: message,
@@ -35,6 +39,35 @@ class ApiService {
       gravity: ToastGravity.BOTTOM,
     );
   }
+
+  // Helper method to make parallel requests and return the first successful response
+  Future<T> _makeParallelRequest<T>(Future<T> Function(String apiUrl) requestFn) async {
+    // Try the last working server first if available
+    if (_lastWorkingServerIndex != null) {
+      try {
+        final result = await requestFn(apiUrls[_lastWorkingServerIndex!])
+            .timeout(requestTimeout);
+        return result;
+      } catch (e) {
+        // If the last working server fails, proceed with parallel requests
+      }
+    }
+
+    // Create a list of futures for all API URLs
+    final futures = apiUrls.map((apiUrl) => requestFn(apiUrl).timeout(requestTimeout));
+
+    // Use Future.any to get the first successful response
+    try {
+      final result = await Future.any(futures);
+      // Remember which server worked
+      _lastWorkingServerIndex = apiUrls.indexOf((result as dynamic).apiUrlUsed ?? apiUrls[0]);
+      return result;
+    } catch (e) {
+      // If all parallel requests fail, throw an exception
+      throw Exception("All API URLs are unreachable");
+    }
+  }
+
   Future<String> fetchSoftwareLink(int linkID) async {
     String? deviceId = await UniqueIdentifier.serial;
     if (deviceId == null) {
@@ -49,11 +82,10 @@ class ApiService {
     String? idNumber = deviceResponse['idNumber'];
 
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      for (int i = 0; i < apiUrls.length; i++) {
-        String apiUrl = apiUrls[i];
-        try {
+      try {
+        final result = await _makeParallelRequest((apiUrl) async {
           final uri = Uri.parse("${apiUrl}V4/Others/Kurt/ArkLinkAPI/kurt_fetchLink.php?linkID=$linkID");
-          final response = await http.get(uri).timeout(requestTimeout);
+          final response = await httpClient.get(uri);
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
@@ -63,25 +95,22 @@ class ApiService {
               if (idNumber != null) {
                 fullUrl += "?idNumber=$idNumber";
               }
-              return fullUrl;
+              return _ApiResult(fullUrl, apiUrl);
             } else {
-              throw Exception(data["error"]);
+              throw Exception(data["error"] ?? "Invalid response format");
             }
           }
-        } catch (e) {
-          String errorMessage = "Error accessing $apiUrl on attempt $attempt";
-          print(errorMessage);
+          throw Exception("HTTP ${response.statusCode}");
+        });
 
-          if (i == 0 && apiUrls.length > 1) {
-            print("Falling back to ${apiUrls[1]}");
-          }
+        return result.value;
+      } catch (e) {
+        print("Attempt $attempt failed: $e");
+        if (attempt < maxRetries) {
+          final delay = initialRetryDelay * (1 << (attempt - 1));
+          print("Waiting ${delay.inSeconds} seconds before retry...");
+          await Future.delayed(delay);
         }
-      }
-
-      if (attempt < maxRetries) {
-        final delay = initialRetryDelay * (1 << (attempt - 1));
-        print("Waiting for ${delay.inSeconds} seconds before retrying...");
-        await Future.delayed(delay);
       }
     }
 
@@ -92,32 +121,33 @@ class ApiService {
 
   Future<bool> checkIdNumber(String idNumber) async {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      for (String apiUrl in apiUrls) {
-        try {
+      try {
+        final result = await _makeParallelRequest((apiUrl) async {
           final uri = Uri.parse("${apiUrl}V4/Others/Kurt/ArkLinkAPI/kurt_checkIdNumber.php");
-          final response = await http.post(
+          final response = await httpClient.post(
             uri,
             headers: {"Content-Type": "application/json"},
             body: jsonEncode({"idNumber": idNumber}),
-          ).timeout(requestTimeout);
+          );
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
             if (data["success"] == true) {
-              return true;
+              return _ApiResult(true, apiUrl);
             } else {
-              throw Exception(data["message"]);
+              throw Exception(data["message"] ?? "ID check failed");
             }
           }
-        } catch (e) {
-          // print("Error accessing $apiUrl on attempt $attempt: $e");
+          throw Exception("HTTP ${response.statusCode}");
+        });
+
+        return result.value;
+      } catch (e) {
+        print("Attempt $attempt failed: $e");
+        if (attempt < maxRetries) {
+          final delay = initialRetryDelay * (1 << (attempt - 1));
+          await Future.delayed(delay);
         }
-      }
-      // If all servers fail, wait for an exponential backoff delay before retrying
-      if (attempt < maxRetries) {
-        final delay = initialRetryDelay * (1 << (attempt - 1)); // Exponential backoff
-        // print("Waiting for ${delay.inSeconds} seconds before retrying...");
-        await Future.delayed(delay);
       }
     }
     throw Exception("Both API URLs are unreachable after $maxRetries attempts");
@@ -125,28 +155,29 @@ class ApiService {
 
   Future<Map<String, dynamic>> fetchProfile(String idNumber) async {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      for (String apiUrl in apiUrls) {
-        try {
+      try {
+        final result = await _makeParallelRequest((apiUrl) async {
           final uri = Uri.parse("${apiUrl}V4/Others/Kurt/ArkLinkAPI/kurt_fetchProfile.php?idNumber=$idNumber");
-          final response = await http.get(uri).timeout(requestTimeout);
+          final response = await httpClient.get(uri);
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
             if (data["success"] == true) {
-              return data;
+              return _ApiResult(data, apiUrl);
             } else {
-              throw Exception(data["message"]);
+              throw Exception(data["message"] ?? "Profile fetch failed");
             }
           }
-        } catch (e) {
-          // print("Error accessing $apiUrl on attempt $attempt: $e");
+          throw Exception("HTTP ${response.statusCode}");
+        });
+
+        return result.value;
+      } catch (e) {
+        print("Attempt $attempt failed: $e");
+        if (attempt < maxRetries) {
+          final delay = initialRetryDelay * (1 << (attempt - 1));
+          await Future.delayed(delay);
         }
-      }
-      // If all servers fail, wait for an exponential backoff delay before retrying
-      if (attempt < maxRetries) {
-        final delay = initialRetryDelay * (1 << (attempt - 1)); // Exponential backoff
-        // print("Waiting for ${delay.inSeconds} seconds before retrying...");
-        await Future.delayed(delay);
       }
     }
     throw Exception("Both API URLs are unreachable after $maxRetries attempts");
@@ -154,72 +185,75 @@ class ApiService {
 
   Future<void> updateLanguageFlag(String idNumber, int languageFlag) async {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      for (String apiUrl in apiUrls) {
-        try {
+      try {
+        await _makeParallelRequest((apiUrl) async {
           final uri = Uri.parse("${apiUrl}V4/Others/Kurt/ArkLinkAPI/kurt_updateLanguage.php");
-          final response = await http.post(
+          final response = await httpClient.post(
             uri,
             body: {
               'idNumber': idNumber,
               'languageFlag': languageFlag.toString(),
             },
-          ).timeout(requestTimeout);
+          );
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
             if (data["success"] == true) {
-              return;
+              return _ApiResult(null, apiUrl);
             } else {
-              throw Exception(data["message"]);
+              throw Exception(data["message"] ?? "Update failed");
             }
           }
-        } catch (e) {
-          // print("Error accessing $apiUrl on attempt $attempt: $e");
+          throw Exception("HTTP ${response.statusCode}");
+        });
+        return; // Success
+      } catch (e) {
+        print("Attempt $attempt failed: $e");
+        if (attempt < maxRetries) {
+          final delay = initialRetryDelay * (1 << (attempt - 1));
+          await Future.delayed(delay);
         }
-      }
-      // If all servers fail, wait for an exponential backoff delay before retrying
-      if (attempt < maxRetries) {
-        final delay = initialRetryDelay * (1 << (attempt - 1)); // Exponential backoff
-        // print("Waiting for ${delay.inSeconds} seconds before retrying...");
-        await Future.delayed(delay);
       }
     }
     throw Exception("Both API URLs are unreachable after $maxRetries attempts");
   }
+
   Future<Map<String, dynamic>> checkDeviceId(String deviceId) async {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      for (String apiUrl in apiUrls) {
-        try {
+      try {
+        final result = await _makeParallelRequest((apiUrl) async {
           final uri = Uri.parse("${apiUrl}V4/Others/Kurt/ArkLinkAPI/kurt_checkDeviceId.php?deviceID=$deviceId");
-          final response = await http.get(uri).timeout(requestTimeout);
+          final response = await httpClient.get(uri);
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
-            // Store the idNumber if it exists
             if (data['success'] == true && data['idNumber'] != null) {
-              final prefs = await SharedPreferences.getInstance();
+              final prefs = await _prefs;
               await prefs.setString('IDNumber', data['idNumber']);
             }
-            return data;
+            return _ApiResult(data, apiUrl);
           }
-        } catch (e) {
-          print("Error accessing $apiUrl on attempt $attempt: $e");
+          throw Exception("HTTP ${response.statusCode}");
+        });
+
+        return result.value;
+      } catch (e) {
+        print("Attempt $attempt failed: $e");
+        if (attempt < maxRetries) {
+          final delay = initialRetryDelay * (1 << (attempt - 1));
+          await Future.delayed(delay);
         }
-      }
-      if (attempt < maxRetries) {
-        final delay = initialRetryDelay * (1 << (attempt - 1));
-        await Future.delayed(delay);
       }
     }
     throw Exception("Both API URLs are unreachable after $maxRetries attempts");
   }
+
   Future<String> fetchManualLink(int linkID, int languageFlag) async {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      for (int i = 0; i < apiUrls.length; i++) {
-        String apiUrl = apiUrls[i];
-        try {
+      try {
+        final result = await _makeParallelRequest((apiUrl) async {
           final uri = Uri.parse("${apiUrl}V4/Others/Kurt/ArkLinkAPI/kurt_fetchManualLink.php?linkID=$linkID");
-          final response = await http.get(uri).timeout(requestTimeout);
+          final response = await httpClient.get(uri);
 
           if (response.statusCode == 200) {
             final data = jsonDecode(response.body);
@@ -228,25 +262,22 @@ class ApiService {
               if (relativePath.isEmpty) {
                 throw Exception("No manual available for selected language");
               }
-              return Uri.parse(apiUrl).resolve(relativePath).toString();
+              return _ApiResult(Uri.parse(apiUrl).resolve(relativePath).toString(), apiUrl);
             } else {
-              throw Exception(data["error"]);
+              throw Exception(data["error"] ?? "Invalid manual link format");
             }
           }
-        } catch (e) {
-          String errorMessage = "Error accessing $apiUrl on attempt $attempt";
-          print(errorMessage);
+          throw Exception("HTTP ${response.statusCode}");
+        });
 
-          if (i == 0 && apiUrls.length > 1) {
-            print("Falling back to ${apiUrls[1]}");
-          }
+        return result.value;
+      } catch (e) {
+        print("Attempt $attempt failed: $e");
+        if (attempt < maxRetries) {
+          final delay = initialRetryDelay * (1 << (attempt - 1));
+          print("Waiting for ${delay.inSeconds} seconds before retrying...");
+          await Future.delayed(delay);
         }
-      }
-
-      if (attempt < maxRetries) {
-        final delay = initialRetryDelay * (1 << (attempt - 1));
-        print("Waiting for ${delay.inSeconds} seconds before retrying...");
-        await Future.delayed(delay);
       }
     }
 
@@ -254,14 +285,24 @@ class ApiService {
     _showToast(finalError);
     throw Exception(finalError);
   }
+
   static void setupHttpOverrides() {
     HttpOverrides.global = MyHttpOverrides();
   }
 }
+
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)
       ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
   }
+}
+
+// Helper class to track which API URL was used
+class _ApiResult<T> {
+  final T value;
+  final String apiUrlUsed;
+
+  _ApiResult(this.value, this.apiUrlUsed);
 }

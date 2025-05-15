@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -30,7 +32,8 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
 
   InAppWebViewController? webViewController;
   PullToRefreshController? pullToRefreshController;
-
+  bool _isNavigating = false;
+  Timer? _debounceTimer;
   String? _webUrl;
   String? _profilePictureUrl;
   String? _firstName;
@@ -61,6 +64,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
     WidgetsBinding.instance.removeObserver(this);
     webViewController?.stopLoading();
     pullToRefreshController?.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -395,6 +399,30 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
     } catch (e) {
       debugPrint("Error showing input method picker: $e");
     }
+  }
+  Future<void> _debounceNavigation(String url) async {
+    if (_isNavigating) return;
+
+    // Cancel any pending navigation
+    _debounceTimer?.cancel();
+
+    setState(() {
+      _isNavigating = true;
+    });
+
+    _debounceTimer = Timer(Duration(milliseconds: 500), () async {
+      try {
+        await webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+      } catch (e) {
+        debugPrint("Navigation error: $e");
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isNavigating = false;
+          });
+        }
+      }
+    });
   }
   @override
   Widget build(BuildContext context) {
@@ -874,7 +902,10 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                       await _launchInBrowser(url);
                       return NavigationActionPolicy.CANCEL;
                     }
-                    return NavigationActionPolicy.ALLOW;
+
+                    // Use debounced navigation for regular links
+                    _debounceNavigation(url);
+                    return NavigationActionPolicy.CANCEL;
                   },
                   // Also handle explicit download requests
                   onDownloadStartRequest: (controller, downloadStartRequest) async {
