@@ -13,6 +13,7 @@ void main() async {
   String? phOrJp = prefs.getString('phorjp');
   String? deviceId = await UniqueIdentifier.serial;
   ApiService.setupHttpOverrides();
+  ApiServiceJP.setupHttpOverrides();
   String initialRoute = '/phorjapan'; // Default route
 
   if (phOrJp == null) {
