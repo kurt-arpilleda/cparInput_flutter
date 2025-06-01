@@ -449,24 +449,24 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                   _scaffoldKey.currentState?.openDrawer();
                 },
               ),
-              title: _idNumber != null
-                  ? Text(
-                "ID: $_idNumber",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.5,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 2,
-                      offset: Offset(1, 1),
-                    ),
-                  ],
-                ),
-              )
-                  : null,
+              // title: _idNumber != null
+              //     ? Text(
+              //   "ID: $_idNumber",
+              //   style: TextStyle(
+              //     color: Colors.white,
+              //     fontSize: 14,
+              //     fontWeight: FontWeight.w500,
+              //     letterSpacing: 0.5,
+              //     shadows: [
+              //       Shadow(
+              //         color: Colors.black.withOpacity(0.2),
+              //         blurRadius: 2,
+              //         offset: Offset(1, 1),
+              //       ),
+              //     ],
+              //   ),
+              // )
+              //     : null,
               actions: [
                 IconButton(
                   padding: EdgeInsets.zero,
