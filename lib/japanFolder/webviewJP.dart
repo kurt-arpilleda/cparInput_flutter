@@ -15,6 +15,7 @@ import 'package:mime/mime.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 import 'package:unique_identifier/unique_identifier.dart';
+import '../barcode_scanner_screen.dart';
 
 class SoftwareWebViewScreenJP extends StatefulWidget {
   final int linkID;
@@ -424,6 +425,188 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
       }
     });
   }
+  Future<void> _openBarcodeScanner() async {
+    try {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const BarcodeScannerScreen(),
+        ),
+      );
+
+      if (result != null && result is String && result.isNotEmpty) {
+        // Inject the scanned code into the focused input field
+        await _injectBarcodeIntoWebView(result);
+      }
+    } catch (e) {
+      print('Error opening barcode scanner: $e');
+      Fluttertoast.showToast(
+        msg: _currentLanguageFlag == 2
+            ? "バーコードスキャナーを開けませんでした"
+            : "Could not open barcode scanner",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
+  }
+
+  Future<void> _injectBarcodeIntoWebView(String barcode) async {
+    if (webViewController != null) {
+      try {
+        String jsCode = '''
+        function injectBarcode() {
+          const activeElement = document.activeElement;
+          const inputs = document.querySelectorAll('input[type="text"], input[type="search"], input[type="number"], textarea');
+          const targetInput = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA') 
+            ? activeElement 
+            : inputs.length > 0 ? inputs[0] : null;
+
+          if (!targetInput) return 'no_input_found';
+
+          // Focus and set value
+          targetInput.focus();
+          targetInput.value = '$barcode';
+
+          // Trigger input and change events
+          targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+          targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+          return 'success';
+        }
+        injectBarcode();
+      ''';
+
+        final result = await webViewController!.evaluateJavascript(source: jsCode);
+        print('Barcode injection result: $result');
+
+        Fluttertoast.showToast(
+          msg: _currentLanguageFlag == 2
+              ? "バーコードが入力されました: $barcode"
+              : "Barcode entered: $barcode",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.green,
+          textColor: Colors.white,
+        );
+
+      } catch (e) {
+        print('Error injecting barcode: $e');
+        Fluttertoast.showToast(
+          msg: _currentLanguageFlag == 2
+              ? "バーコードの入力に失敗しました"
+              : "Failed to enter barcode",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+        );
+      }
+    }
+  }
+
+  Future<void> _setupInputFieldDetection() async {
+    if (webViewController != null) {
+      String jsCode = '''
+(function() {
+  let button;
+  let container;
+
+  function isVisible(elem) {
+    if (!elem || elem.offsetParent === null) return false;
+    
+    const rect = elem.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    
+    const topElem = document.elementFromPoint(centerX, centerY);
+    return topElem === elem || elem.contains(topElem);
+  }
+
+  function updateBarcodeScannerButton() {
+    const input = document.getElementById('ptag');
+    if (!input) return;
+
+    const shouldShow = isVisible(input);
+
+    // If it should be visible and not already added
+    if (shouldShow && !input.dataset.hasBarcodeButton) {
+      input.dataset.hasBarcodeButton = 'true';
+
+      container = document.createElement('div');
+      container.style.position = 'relative';
+      container.style.display = 'inline-block';
+      container.style.width = '100%';
+
+      input.parentNode.insertBefore(container, input);
+      container.appendChild(input);
+
+      button = document.createElement('div');
+      button.innerHTML = '𝄃𝄂𝄂𝄀𝄁𝄃';
+      button.style.cssText = \`
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 9999;
+        background: #3452B4;
+        color: white;
+        padding: 0 4px;
+        border-radius: 4px;
+        font-size: 10px;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        font-family: Arial, sans-serif;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      \`;
+
+      button.onclick = function(e) {
+        e.stopPropagation();
+        window.flutter_inappwebview.callHandler('openBarcodeScanner');
+      };
+
+      container.appendChild(button);
+    }
+
+    // If the input is now hidden or behind modal, remove the button
+    if (!shouldShow && button && container && container.parentNode) {
+      input.removeAttribute('data-has-barcode-button');
+      container.parentNode.insertBefore(input, container);
+      container.remove();
+      button = null;
+      container = null;
+    }
+  }
+
+  // Initial check
+  updateBarcodeScannerButton();
+
+  // Observe DOM for changes (e.g., modal open/close)
+  const observer = new MutationObserver(function() {
+    updateBarcodeScannerButton();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
+  });
+
+  // Also check every second in case changes aren't caught by observer
+  setInterval(updateBarcodeScannerButton, 1000);
+})();
+''';
+
+      try {
+        await webViewController!.evaluateJavascript(source: jsCode);
+      } catch (e) {
+        print('Error setting up input field detection: \$e');
+      }
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -697,6 +880,76 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                               ],
                             ),
                           ),
+                          SizedBox(height: 20),
+                          Padding(
+                            padding: EdgeInsets.only(
+                              left: _currentLanguageFlag == 2 ? 58.0 : 32.0,
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  _currentLanguageFlag == 2
+                                      ? 'メモ'
+                                      : 'Memo',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(width: 15),
+                                IconButton(
+                                  icon: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Color(0xFFE91E63),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.3),
+                                          blurRadius: 4,
+                                          offset: Offset(2, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Transform(
+                                      alignment: Alignment.center,
+                                      transform: Matrix4.identity()..scale(-1.0, 1.0),
+                                      child: Icon(
+                                        Icons.mode_comment_outlined,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                                  onPressed: () async {
+                                    // Close the drawer first
+                                    Navigator.of(context).pop();
+
+                                    if (webViewController != null) {
+                                      try {
+                                        await webViewController!.evaluateJavascript(
+                                          source: "document.getElementById('memoBtn').click();",
+                                        );
+                                      } catch (e) {
+                                        Fluttertoast.showToast(
+                                          msg: _currentLanguageFlag == 2
+                                              ? "メモボタンをクリックできませんでした"
+                                              : "Could not click memo button",
+                                          toastLength: Toast.LENGTH_SHORT,
+                                          gravity: ToastGravity.BOTTOM,
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -854,6 +1107,14 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                   pullToRefreshController: pullToRefreshController,
                   onWebViewCreated: (controller) {
                     webViewController = controller;
+
+                    // Add handler for barcode scanner
+                    controller.addJavaScriptHandler(
+                      handlerName: 'openBarcodeScanner',
+                      callback: (args) {
+                        _openBarcodeScanner();
+                      },
+                    );
                   },
                   onLoadStart: (controller, url) {
                     setState(() {
@@ -861,18 +1122,23 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                       _progress = 0;
                     });
                   },
-                  onLoadStop: (controller, url) {
+                  onLoadStop: (controller, url) async {
                     pullToRefreshController?.endRefreshing();
                     setState(() {
                       _isLoading = false;
                       _progress = 1;
                     });
+
+                    // Setup input field detection after page loads
+                    await Future.delayed(Duration(milliseconds: 1000));
+                    await _setupInputFieldDetection();
                   },
                   onProgressChanged: (controller, progress) {
                     setState(() {
                       _progress = progress / 100;
                     });
                   },
+                  // ... rest of your existing InAppWebView configuration
                   onReceivedServerTrustAuthRequest: (controller, challenge) async {
                     return ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.PROCEED);
                   },
@@ -894,7 +1160,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                       action: allGranted ? PermissionResponseAction.GRANT : PermissionResponseAction.DENY,
                     );
                   },
-                  // Handle download links by opening in external browser
                   shouldOverrideUrlLoading: (controller, navigationAction) async {
                     final url = navigationAction.request.url?.toString() ?? '';
 
@@ -903,11 +1168,9 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
                       return NavigationActionPolicy.CANCEL;
                     }
 
-                    // Use debounced navigation for regular links
                     _debounceNavigation(url);
                     return NavigationActionPolicy.CANCEL;
                   },
-                  // Also handle explicit download requests
                   onDownloadStartRequest: (controller, downloadStartRequest) async {
                     await _launchInBrowser(downloadStartRequest.url.toString());
                   },
