@@ -267,13 +267,13 @@ class ScannerOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double frameWidth = size.width * 0.9;
-    final double frameHeight = frameWidth * 0.8; // Slightly taller rectangle
+    final double frameHeight = frameWidth * 0.7;
     final double centerX = (size.width - frameWidth) / 2;
     final double centerY = (size.height - frameHeight) / 2;
 
 
     final Paint dimPaint = Paint()
-      ..color = Colors.black.withOpacity(0.6);
+      ..color = Colors.black.withOpacity(0.8);
 
     final Path dimPath = Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
@@ -282,29 +282,24 @@ class ScannerOverlayPainter extends CustomPainter {
 
     canvas.drawPath(dimPath, dimPaint);
 
-    // Frame border
     final Paint borderPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
-    // Draw the frame rectangle
     canvas.drawRect(
       Rect.fromLTWH(centerX, centerY, frameWidth, frameHeight),
       borderPaint,
     );
 
-    // Corner indicators
     final double cornerLength = 30;
     final double cornerWidth = 4;
 
-    // Top-left corner
     final Paint cornerPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
       ..strokeWidth = cornerWidth;
 
-    // Top-left
     canvas.drawLine(
       Offset(centerX, centerY),
       Offset(centerX + cornerLength, centerY),
@@ -316,7 +311,6 @@ class ScannerOverlayPainter extends CustomPainter {
       cornerPaint,
     );
 
-    // Top-right
     canvas.drawLine(
       Offset(centerX + frameWidth, centerY),
       Offset(centerX + frameWidth - cornerLength, centerY),
@@ -327,8 +321,6 @@ class ScannerOverlayPainter extends CustomPainter {
       Offset(centerX + frameWidth, centerY + cornerLength),
       cornerPaint,
     );
-
-    // Bottom-left
     canvas.drawLine(
       Offset(centerX, centerY + frameHeight),
       Offset(centerX + cornerLength, centerY + frameHeight),
@@ -339,8 +331,6 @@ class ScannerOverlayPainter extends CustomPainter {
       Offset(centerX, centerY + frameHeight - cornerLength),
       cornerPaint,
     );
-
-    // Bottom-right
     canvas.drawLine(
       Offset(centerX + frameWidth, centerY + frameHeight),
       Offset(centerX + frameWidth - cornerLength, centerY + frameHeight),
@@ -351,8 +341,6 @@ class ScannerOverlayPainter extends CustomPainter {
       Offset(centerX + frameWidth, centerY + frameHeight - cornerLength),
       cornerPaint,
     );
-
-    // Center line when scanning
     if (showCenterLine) {
       final Paint centerLinePaint = Paint()
         ..color = Colors.green
