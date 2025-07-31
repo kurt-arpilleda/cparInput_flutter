@@ -956,7 +956,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
                           SizedBox(height: 15),
                           Padding(
                             padding: EdgeInsets.only(
-                              left: _currentLanguageFlag == 2 ? 25.0 : 10.0,
+                              left: _currentLanguageFlag == 2 ? 25.0 : 9.0,
                             ),
                             child: Row(
                               children: [
