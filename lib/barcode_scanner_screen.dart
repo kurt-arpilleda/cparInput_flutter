@@ -34,9 +34,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
   bool _screenOpened = false;
   bool _torchEnabled = false;
-  bool _isQrMode = false;
   bool _showCenterLine = false;
-  CameraFacing _cameraFacing = CameraFacing.back;
   StreamSubscription<BarcodeCapture>? _subscription;
   int _currentLanguageFlag = 1;
   String _phOrJp = "ph";
@@ -138,30 +136,11 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     await cameraController.toggleTorch();
   }
 
-  void _toggleScanMode() {
-    setState(() {
-      _isQrMode = !_isQrMode;
-      _showCenterLine = false;
-      _consecutiveScanCount = 0;
-      _lastScannedCode = null;
-      _isProcessing = false;
-      _screenOpened = false;
-    });
-    _scanResetTimer?.cancel();
-    _cooldownTimer?.cancel();
-  }
+  String get _titleText => _currentLanguageFlag == 2 ? "スキャナー" : "Scanner";
 
-  String get _titleText => _isQrMode
-      ? (_currentLanguageFlag == 2 ? "QRコードスキャン" : "Scan QR Code")
-      : (_currentLanguageFlag == 2 ? "バーコードスキャン" : "Scan Barcode");
-
-  String get _instructionText => _isQrMode
-      ? (_currentLanguageFlag == 2
-      ? "QRコードを正方形のフレーム内に配置してください。\n中央に配置し、ぼやけていないことを確認してください。"
-      : "Place the QR code inside the square frame.\nEnsure it is centered and not blurry.")
-      : (_currentLanguageFlag == 2
-      ? "バーコードを長方形のフレーム内に配置してください。\n中央に配置し、ぼやけていないことを確認してください。"
-      : "Place the barcode inside the rectangular frame.\nEnsure it is centered and not blurry.");
+  String get _instructionText => _currentLanguageFlag == 2
+      ? "バーコードまたはQRコードをフレーム内に配置してください"
+      : "Place the barcode or QR code inside the frame";
 
   @override
   Widget build(BuildContext context) {
@@ -174,7 +153,6 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             fit: BoxFit.cover,
           ),
           CustomScannerOverlay(
-            isQrMode: _isQrMode,
             showCenterLine: _showCenterLine,
           ),
           Positioned(
@@ -207,7 +185,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                 Row(
                   children: [
                     Icon(
-                      _isQrMode ? Icons.qr_code_scanner : Icons.barcode_reader,
+                      Icons.qr_code_scanner,
                       color: Colors.white,
                       size: 24,
                     ),
@@ -237,45 +215,21 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             bottom: 32,
             left: 0,
             right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white, width: 2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    child: IconButton(
-                      icon: Icon(
-                        _isQrMode ? Icons.barcode_reader : Icons.qr_code_scanner,
-                        color: Colors.white,
-                        size: 32,
-                      ),
-                      onPressed: _toggleScanMode,
-                    ),
-                  ),
+            child: Center(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                SizedBox(width: 16),
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white, width: 2),
-                    borderRadius: BorderRadius.circular(8),
+                child: IconButton(
+                  icon: Icon(
+                    _torchEnabled ? Icons.flash_on : Icons.flash_off,
+                    color: _torchEnabled ? Colors.yellow : Colors.white,
+                    size: 32,
                   ),
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    child: IconButton(
-                      icon: Icon(
-                        _torchEnabled ? Icons.flash_on : Icons.flash_off,
-                        color: _torchEnabled ? Colors.yellow : Colors.white,
-                        size: 32,
-                      ),
-                      onPressed: _toggleTorch,
-                    ),
-                  ),
+                  onPressed: _toggleTorch,
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -285,11 +239,9 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 }
 
 class CustomScannerOverlay extends StatelessWidget {
-  final bool isQrMode;
   final bool showCenterLine;
 
   const CustomScannerOverlay({
-    required this.isQrMode,
     required this.showCenterLine,
     Key? key,
   }) : super(key: key);
@@ -299,7 +251,6 @@ class CustomScannerOverlay extends StatelessWidget {
     return CustomPaint(
       size: Size.infinite,
       painter: ScannerOverlayPainter(
-        isQrMode: isQrMode,
         showCenterLine: showCenterLine,
       ),
     );
@@ -307,23 +258,22 @@ class CustomScannerOverlay extends StatelessWidget {
 }
 
 class ScannerOverlayPainter extends CustomPainter {
-  final bool isQrMode;
   final bool showCenterLine;
 
   ScannerOverlayPainter({
-    required this.isQrMode,
     required this.showCenterLine,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double frameWidth = isQrMode ? 250 : 330;
-    final double frameHeight = isQrMode ? 250 : 80;
+    final double frameWidth = size.width * 0.9;
+    final double frameHeight = frameWidth * 0.8; // Slightly taller rectangle
     final double centerX = (size.width - frameWidth) / 2;
     final double centerY = (size.height - frameHeight) / 2;
 
+
     final Paint dimPaint = Paint()
-      ..color = Colors.black.withOpacity(0.8);
+      ..color = Colors.black.withOpacity(0.6);
 
     final Path dimPath = Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
@@ -332,62 +282,82 @@ class ScannerOverlayPainter extends CustomPainter {
 
     canvas.drawPath(dimPath, dimPaint);
 
+    // Frame border
     final Paint borderPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
+      ..strokeWidth = 2;
 
-    final double cornerLength = 40;
+    // Draw the frame rectangle
+    canvas.drawRect(
+      Rect.fromLTWH(centerX, centerY, frameWidth, frameHeight),
+      borderPaint,
+    );
 
+    // Corner indicators
+    final double cornerLength = 30;
+    final double cornerWidth = 4;
+
+    // Top-left corner
+    final Paint cornerPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = cornerWidth;
+
+    // Top-left
     canvas.drawLine(
       Offset(centerX, centerY),
       Offset(centerX + cornerLength, centerY),
-      borderPaint,
+      cornerPaint,
     );
     canvas.drawLine(
       Offset(centerX, centerY),
       Offset(centerX, centerY + cornerLength),
-      borderPaint,
+      cornerPaint,
     );
 
+    // Top-right
     canvas.drawLine(
       Offset(centerX + frameWidth, centerY),
       Offset(centerX + frameWidth - cornerLength, centerY),
-      borderPaint,
+      cornerPaint,
     );
     canvas.drawLine(
       Offset(centerX + frameWidth, centerY),
       Offset(centerX + frameWidth, centerY + cornerLength),
-      borderPaint,
+      cornerPaint,
     );
 
+    // Bottom-left
     canvas.drawLine(
       Offset(centerX, centerY + frameHeight),
       Offset(centerX + cornerLength, centerY + frameHeight),
-      borderPaint,
+      cornerPaint,
     );
     canvas.drawLine(
       Offset(centerX, centerY + frameHeight),
       Offset(centerX, centerY + frameHeight - cornerLength),
-      borderPaint,
+      cornerPaint,
     );
 
+    // Bottom-right
     canvas.drawLine(
       Offset(centerX + frameWidth, centerY + frameHeight),
       Offset(centerX + frameWidth - cornerLength, centerY + frameHeight),
-      borderPaint,
+      cornerPaint,
     );
     canvas.drawLine(
       Offset(centerX + frameWidth, centerY + frameHeight),
       Offset(centerX + frameWidth, centerY + frameHeight - cornerLength),
-      borderPaint,
+      cornerPaint,
     );
 
+    // Center line when scanning
     if (showCenterLine) {
       final Paint centerLinePaint = Paint()
         ..color = Colors.green
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 6;
+        ..strokeWidth = 3;
 
       final double centerLineY = centerY + frameHeight / 2;
       canvas.drawLine(
