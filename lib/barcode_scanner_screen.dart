@@ -267,7 +267,7 @@ class ScannerOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final double frameWidth = size.width * 0.9;
-    final double frameHeight = frameWidth * 0.7;
+    final double frameHeight = frameWidth * 0.8;
     final double centerX = (size.width - frameWidth) / 2;
     final double centerY = (size.height - frameHeight) / 2;
 
