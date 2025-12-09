@@ -15,6 +15,8 @@ class BarcodeScannerScreen extends StatefulWidget {
 class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   final MobileScannerController cameraController = MobileScannerController(
     torchEnabled: false,
+    detectionSpeed: DetectionSpeed.unrestricted,
+    facing: CameraFacing.back,
     formats: [
       BarcodeFormat.code128,
       BarcodeFormat.code39,
@@ -40,8 +42,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   String _phOrJp = "ph";
 
   final int _requiredConsecutiveScans = 3;
-  String? _lastScannedCode;
-  int _consecutiveScanCount = 0;
+  final Map<String, int> _scanCounts = {};
   Timer? _scanResetTimer;
   Timer? _cooldownTimer;
   bool _isProcessing = false;
@@ -49,6 +50,10 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
     _loadPreferences();
     _startListening();
     _torchEnabled = cameraController.torchEnabled;
@@ -68,6 +73,12 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _subscription?.cancel();
     _scanResetTimer?.cancel();
     _cooldownTimer?.cancel();
@@ -79,9 +90,12 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     _subscription = cameraController.barcodes.listen(
           (BarcodeCapture capture) {
         if (!_screenOpened && !_isProcessing && capture.barcodes.isNotEmpty) {
-          final String code = capture.barcodes.first.displayValue ?? '';
-          if (code.isNotEmpty && code.trim().length > 3) {
-            _processScannedCode(code.trim());
+          for (final barcode in capture.barcodes) {
+            final String code = barcode.displayValue ?? '';
+            if (code.isNotEmpty && code.trim().isNotEmpty) {
+              _processScannedCode(code.trim());
+              break;
+            }
           }
         }
       },
@@ -91,19 +105,13 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   void _processScannedCode(String code) {
     _scanResetTimer?.cancel();
 
-    if (_lastScannedCode == code) {
-      _consecutiveScanCount++;
-    } else {
-      _lastScannedCode = code;
-      _consecutiveScanCount = 1;
-    }
+    _scanCounts[code] = (_scanCounts[code] ?? 0) + 1;
 
-    _scanResetTimer = Timer(const Duration(milliseconds: 300), () {
-      _consecutiveScanCount = 0;
-      _lastScannedCode = null;
+    _scanResetTimer = Timer(const Duration(milliseconds: 500), () {
+      _scanCounts.clear();
     });
 
-    if (_consecutiveScanCount >= _requiredConsecutiveScans && !_isProcessing) {
+    if (_scanCounts[code]! >= _requiredConsecutiveScans && !_isProcessing) {
       _scanResetTimer?.cancel();
       _isProcessing = true;
       _screenOpened = true;
@@ -116,7 +124,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       _showCenterLine = true;
     });
 
-    if (await Vibration.hasVibrator() ?? false) {
+    if (await Vibration.hasVibrator() == true) {
       Vibration.vibrate(duration: 100);
     }
 
@@ -218,7 +226,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             child: Center(
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.5),
+                  color: Colors.black.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: IconButton(
@@ -273,7 +281,7 @@ class ScannerOverlayPainter extends CustomPainter {
 
 
     final Paint dimPaint = Paint()
-      ..color = Colors.black.withOpacity(0.8);
+      ..color = Colors.black.withValues(alpha: 0.8);
 
     final Path dimPath = Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
